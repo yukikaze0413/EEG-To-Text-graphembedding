@@ -1,4 +1,6 @@
 import math
+import json
+import time
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -7,6 +9,22 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer, BartForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput
+
+
+# region agent log
+def _agent_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict) -> None:
+    payload = {
+        "sessionId": "1110a0",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    with open("debug-1110a0.log", "a", encoding="utf-8") as fp:
+        fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
+# endregion
 
 
 class TemporalEncoder(nn.Module):
@@ -349,6 +367,28 @@ class GAET(nn.Module):
             # In generate stage, trainable params are projector-only; this term has no gradient path.
             # Keep it as a monitoring signal and avoid adding a misleading constant to the loss.
             out.contrastive_loss = contrastive_loss
+        if getattr(self, "_agent_generate_log_count", 0) < 20:
+            self._agent_generate_log_count = getattr(self, "_agent_generate_log_count", 0) + 1
+            # region agent log
+            _agent_debug_log(
+                run_id="initial",
+                hypothesis_id="H3",
+                location="model_decoding.py:GAET.forward_generate",
+                message="generate stage loss and contrastive monitoring",
+                data={
+                    "contrastive_weight": float(contrastive_weight),
+                    "has_text_list": bool(text_list is not None),
+                    "loss": float(out.loss.detach().cpu().item()) if out.loss is not None else None,
+                    "has_contrastive_loss": bool(out.contrastive_loss is not None),
+                    "contrastive_loss": float(out.contrastive_loss.detach().cpu().item()) if out.contrastive_loss is not None else None,
+                    "h_graph_requires_grad": bool(h_graph.requires_grad),
+                    "graph_tokens_requires_grad": bool(graph_tokens.requires_grad),
+                    "projector_trainable_params": int(sum(p.requires_grad for p in self.projector.parameters())),
+                    "temporal_trainable_params": int(sum(p.requires_grad for p in self.temporal_encoder.parameters())),
+                    "graph_trainable_params": int(sum(p.requires_grad for p in self.graph_transformer.parameters())),
+                },
+            )
+            # endregion
         return out
 
     def forward(

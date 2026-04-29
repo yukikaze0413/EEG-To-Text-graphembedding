@@ -1,8 +1,26 @@
+import json
+import time
 from typing import Dict, List, Optional
 
 import numpy as np
 import torch
 from torch.utils.data import Dataset
+
+
+# region agent log
+def _agent_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict) -> None:
+    payload = {
+        "sessionId": "1110a0",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    with open("debug-1110a0.log", "a", encoding="utf-8") as fp:
+        fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
+# endregion
 
 
 def normalize_1d(input_tensor: torch.Tensor, eps: float = 1e-8) -> torch.Tensor:
@@ -28,6 +46,26 @@ def combine_adjacency_matrices(a_functional: np.ndarray, self_loop_weight: float
     d = np.sum(a, axis=1)
     d_inv_sqrt = np.diag(1.0 / np.sqrt(d + 1e-8))
     a_norm = d_inv_sqrt @ a @ d_inv_sqrt
+    if getattr(combine_adjacency_matrices, "_agent_log_count", 0) < 20:
+        combine_adjacency_matrices._agent_log_count = getattr(combine_adjacency_matrices, "_agent_log_count", 0) + 1
+        # region agent log
+        _agent_debug_log(
+            run_id="initial",
+            hypothesis_id="H1",
+            location="data.py:combine_adjacency_matrices",
+            message="adjacency normalization stats",
+            data={
+                "functional_min": float(np.min(a_functional)),
+                "functional_max": float(np.max(a_functional)),
+                "degree_min": float(np.min(d)),
+                "degree_max": float(np.max(d)),
+                "non_positive_degree_count": int(np.sum(d <= 0)),
+                "normalized_finite": bool(np.isfinite(a_norm).all()),
+                "normalized_nan_count": int(np.isnan(a_norm).sum()),
+                "normalized_inf_count": int(np.isinf(a_norm).sum()),
+            },
+        )
+        # endregion
     return a_norm.astype(np.float32)
 
 
@@ -69,10 +107,36 @@ def get_input_sample(
 
     sent_level_eeg = _get_sent_eeg(sent_obj, bands)  # (105 * nbands,)
     if torch.isnan(sent_level_eeg).any():
+        if getattr(get_input_sample, "_agent_nan_log_count", 0) < 20:
+            get_input_sample._agent_nan_log_count = getattr(get_input_sample, "_agent_nan_log_count", 0) + 1
+            # region agent log
+            _agent_debug_log(
+                run_id="initial",
+                hypothesis_id="H1",
+                location="data.py:get_input_sample",
+                message="sample skipped because sentence EEG contains NaN",
+                data={"numel": int(sent_level_eeg.numel()), "nan_count": int(torch.isnan(sent_level_eeg).sum().item())},
+            )
+            # endregion
         return None
     num_channels = 105
     num_bands = len(bands)
     if sent_level_eeg.numel() != num_channels * num_bands:
+        if getattr(get_input_sample, "_agent_shape_log_count", 0) < 20:
+            get_input_sample._agent_shape_log_count = getattr(get_input_sample, "_agent_shape_log_count", 0) + 1
+            # region agent log
+            _agent_debug_log(
+                run_id="initial",
+                hypothesis_id="H1",
+                location="data.py:get_input_sample",
+                message="sample skipped because EEG feature count is unexpected",
+                data={
+                    "actual_numel": int(sent_level_eeg.numel()),
+                    "expected_numel": int(num_channels * num_bands),
+                    "num_bands": int(num_bands),
+                },
+            )
+            # endregion
         return None
 
     eeg_signals = sent_level_eeg.view(num_channels, num_bands).contiguous()  # (C, T)

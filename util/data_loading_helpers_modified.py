@@ -1,7 +1,26 @@
+import json
+import time
+
 import numpy as np
 import re
 
 eeg_float_resolution=np.float16
+
+
+# region agent log
+def _agent_debug_log(run_id, hypothesis_id, location, message, data):
+    payload = {
+        "sessionId": "1110a0",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    with open("debug-1110a0.log", "a", encoding="utf-8") as fp:
+        fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
+# endregion
 
 Alpha_ffd_names = ['FFD_a1', 'FFD_a1_diff', 'FFD_a2', 'FFD_a2_diff']
 Beta_ffd_names = ['FFD_b1', 'FFD_b1_diff', 'FFD_b2', 'FFD_b2_diff']
@@ -104,9 +123,11 @@ def extract_word_level_data(data_container, word_objects, eeg_float_resolution =
 
             try:
                 sfdData = word_objects['SFD']
+                sfd_missing = False
             except KeyError:
                 print("no SFD!")
                 sfdData = []
+                sfd_missing = True
             nFixData = word_objects['nFixations']
             fixPositions = word_objects["fixPositions"]
 
@@ -120,6 +141,30 @@ def extract_word_level_data(data_container, word_objects, eeg_float_resolution =
             TRT_EEG_features = [word_objects[feature] for feature in ['TRT_t1','TRT_t2','TRT_a1','TRT_a2','TRT_b1','TRT_b2','TRT_g1','TRT_g2']]
             #### 
             assert len(contentData) == len(etData) == len(rawData), "different amounts of different data!!"
+
+            if getattr(extract_word_level_data, "_agent_log_count", 0) < 20:
+                extract_word_level_data._agent_log_count = getattr(extract_word_level_data, "_agent_log_count", 0) + 1
+                # region agent log
+                _agent_debug_log(
+                    "initial",
+                    "H2",
+                    "util/data_loading_helpers_modified.py:extract_word_level_data",
+                    "word extraction input lengths before zip",
+                    {
+                        "sfd_missing": bool(sfd_missing),
+                        "raw_len": int(len(rawData)),
+                        "content_len": int(len(contentData)),
+                        "ffd_len": int(len(ffdData)),
+                        "gd_len": int(len(gdData)),
+                        "gpt_len": int(len(gptData)),
+                        "trt_len": int(len(trtData)),
+                        "sfd_len": int(len(sfdData)),
+                        "nfix_len": int(len(nFixData)),
+                        "fix_positions_len": int(len(fixPositions)),
+                        "zip_min_len": int(min(len(rawData), len(etData), len(contentData), len(ffdData), len(gdData), len(gptData), len(trtData), len(sfdData), len(nFixData), len(fixPositions))),
+                    },
+                )
+                # endregion
 
             zipped_data = zip(rawData, etData, contentData, ffdData, gdData, gptData, trtData, sfdData, nFixData, fixPositions)
             
@@ -187,6 +232,23 @@ def extract_word_level_data(data_container, word_objects, eeg_float_resolution =
                     word_idx += 1
                 else:
                     print(word_string + " is not a real word.")
+            if getattr(extract_word_level_data, "_agent_output_log_count", 0) < 20:
+                extract_word_level_data._agent_output_log_count = getattr(extract_word_level_data, "_agent_output_log_count", 0) + 1
+                # region agent log
+                _agent_debug_log(
+                    "initial",
+                    "H2",
+                    "util/data_loading_helpers_modified.py:extract_word_level_data",
+                    "word extraction output counts",
+                    {
+                        "sfd_missing": bool(sfd_missing),
+                        "word_level_data_count": int(len(word_level_data)),
+                        "word_tokens_all_count": int(len(word_tokens_all)),
+                        "word_tokens_has_fixation_count": int(len(word_tokens_has_fixation)),
+                        "word_tokens_with_mask_count": int(len(word_tokens_with_mask)),
+                    },
+                )
+                # endregion
         else:
             # If there are no word-level data it will be word embeddings alone
             word_level_data = {}
