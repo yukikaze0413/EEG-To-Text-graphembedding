@@ -1,14 +1,9 @@
 name: EEGToText-py28-cu128
 channels:
-  - pytorch
-  - nvidia
   - conda-forge
+  - nodefaults
 dependencies:
   - python=3.10
-  - pytorch=2.8
-  - torchvision
-  - torchaudio
-  - pytorch-cuda=12.8
   - numpy
   - scipy
   - h5py
@@ -17,6 +12,10 @@ dependencies:
   - nltk
   - pip
   - pip:
+    - --extra-index-url https://download.pytorch.org/whl/cu128
+    - torch==2.8.0
+    - torchvision
+    - torchaudio
     - transformers
     - sentence-transformers
     - fuzzy-match==0.0.1
