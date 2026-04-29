@@ -12,6 +12,89 @@ import numpy as np
 # 3) EEG-Text 对比对齐分支
 
 """ main architecture for open vocabulary EEG-To-Text decoding"""
+class GraphAttentionLayer(nn.Module):
+    """
+    Simple GAT layer for EEG graph processing
+    """
+    def __init__(self, in_features, out_features, dropout=0.1, alpha=0.2, concat=True):
+        super(GraphAttentionLayer, self).__init__()
+        self.in_features = in_features
+        self.out_features = out_features
+        self.dropout = dropout
+        self.alpha = alpha
+        self.concat = concat
+
+        self.W = nn.Linear(in_features, out_features, bias=False)
+        self.a = nn.Parameter(torch.empty(size=(2 * out_features, 1)))
+        nn.init.xavier_uniform_(self.W.weight.data, gain=1.414)
+        nn.init.xavier_uniform_(self.a.data, gain=1.414)
+
+        self.leakyrelu = nn.LeakyReLU(self.alpha)
+
+    def forward(self, h, adj):
+        Wh = self.W(h) # (..., num_nodes, out_features)
+        
+        a_input1 = torch.matmul(Wh, self.a[:self.out_features, :])
+        a_input2 = torch.matmul(Wh, self.a[self.out_features:, :])
+        
+        e = self.leakyrelu(a_input1 + a_input2.transpose(-1, -2))
+        e = e + adj
+
+        attention = F.softmax(e, dim=-1)
+        attention = F.dropout(attention, self.dropout, training=self.training)
+        
+        h_prime = torch.matmul(attention, Wh)
+
+        if self.concat:
+            return F.elu(h_prime)
+        else:
+            return h_prime
+
+class EEGGATEncoder(nn.Module):
+    """基于 GAT 的 EEG 编码器，内置自学习动态图邻接矩阵"""
+    def __init__(self, in_feature=840, num_nodes=105, bands=8, num_layers=2, dropout=0.1):
+        super(EEGGATEncoder, self).__init__()
+        self.num_nodes = num_nodes
+        self.bands = bands
+        assert in_feature == num_nodes * bands, f"in_feature {in_feature} must equal num_nodes {num_nodes} * bands {bands}"
+        
+        # Learnable adjacency matrix for the graph (自学习动态图)
+        # 理论优化：初始化为0，因为 softmax(x+c) = softmax(x)，全为相同常数在初期不起作用。
+        # 初始为 0 意味着最初完全依赖数据驱动的动态注意力，随后慢慢学到静态的空间先验偏置。
+        self.adj = nn.Parameter(torch.zeros(num_nodes, num_nodes))
+        
+        # GAT Layers
+        self.gat_layers = nn.ModuleList()
+        # Initial layer: bands -> 16
+        self.gat_layers.append(GraphAttentionLayer(bands, 16, dropout=dropout, concat=True))
+        # Hidden layers if any
+        for _ in range(num_layers - 2):
+            self.gat_layers.append(GraphAttentionLayer(16, 16, dropout=dropout, concat=True))
+        # Final layer: 16 -> bands
+        self.gat_layers.append(GraphAttentionLayer(16, bands, dropout=dropout, concat=False))
+        
+    def forward(self, x):
+        # x: (batch_size, seq_len, in_feature)
+        bs, seq_len, _ = x.shape
+        
+        # data.py 中拼接顺序是：先按照 band 循环，每个 band 长度为 105
+        # 所以一维向量的实际布局是 (bands, num_nodes)
+        h = x.view(bs * seq_len, self.bands, self.num_nodes)
+        # 转置为 (batch_size * seq_len, num_nodes, bands) 送入 GAT
+        h = h.transpose(1, 2)
+        
+        # GAT passes
+        for gat in self.gat_layers:
+            h = gat(h, self.adj)
+            
+        # 恢复原状送给后续的 Transformer 或映射层
+        h = h.transpose(1, 2).contiguous()
+        out = h.view(bs, seq_len, self.num_nodes * self.bands)
+        
+        return out
+
+
+
 class MambaBlock(nn.Module):
     """轻量级线性复杂度 SSM 风格模块（Mamba inspired）。"""
     def __init__(self, d_model, d_state=16, d_conv=4, expand=2, dropout=0.1):
@@ -176,6 +259,8 @@ class BrainTranslator(nn.Module):
             mamba_expand=2,
             mamba_dropout=0.1,
             bimamba_fusion="concat_linear",
+            gat_num_layers=2,
+            gat_dropout=0.1,
             use_contrastive_align=False,
             contrastive_proj_dim=768,
             contrastive_temperature=0.07,
@@ -208,6 +293,14 @@ class BrainTranslator(nn.Module):
                 expand=mamba_expand,
                 dropout=mamba_dropout,
                 fusion=bimamba_fusion,
+            )
+        elif eeg_encoder_type == "gat":
+            self.additional_encoder = EEGGATEncoder(
+                in_feature=in_feature,
+                num_nodes=105,
+                bands=8,
+                num_layers=gat_num_layers,
+                dropout=gat_dropout
             )
         else:
             raise ValueError(f"Unsupported eeg_encoder_type: {eeg_encoder_type}")

@@ -264,6 +264,9 @@ if __name__ == '__main__':
     mamba_dropout = training_config.get('mamba_dropout', 0.1)
     bimamba_fusion = training_config.get('bimamba_fusion', 'concat_linear')
 
+    gat_num_layers = training_config.get('gat_num_layers', 2)
+    gat_dropout = training_config.get('gat_dropout', 0.1)
+
     use_contrastive_align = training_config.get('use_contrastive_align', False)
     contrastive_proj_dim = training_config.get('contrastive_proj_dim', 768)
     contrastive_temperature = training_config.get('contrastive_temperature', 0.07)
@@ -358,6 +361,8 @@ if __name__ == '__main__':
             mamba_expand=mamba_expand,
             mamba_dropout=mamba_dropout,
             bimamba_fusion=bimamba_fusion,
+            gat_num_layers=gat_num_layers,
+            gat_dropout=gat_dropout,
             use_contrastive_align=use_contrastive_align,
             contrastive_proj_dim=contrastive_proj_dim,
             contrastive_temperature=contrastive_temperature,
@@ -384,6 +389,8 @@ if __name__ == '__main__':
             mamba_expand=mamba_expand,
             mamba_dropout=mamba_dropout,
             bimamba_fusion=bimamba_fusion,
+            gat_num_layers=gat_num_layers,
+            gat_dropout=gat_dropout,
             use_contrastive_align=use_contrastive_align,
             contrastive_proj_dim=contrastive_proj_dim,
             contrastive_temperature=contrastive_temperature,
@@ -405,6 +412,8 @@ if __name__ == '__main__':
             mamba_expand=mamba_expand,
             mamba_dropout=mamba_dropout,
             bimamba_fusion=bimamba_fusion,
+            gat_num_layers=gat_num_layers,
+            gat_dropout=gat_dropout,
             use_contrastive_align=use_contrastive_align,
             contrastive_proj_dim=contrastive_proj_dim,
             contrastive_temperature=contrastive_temperature,

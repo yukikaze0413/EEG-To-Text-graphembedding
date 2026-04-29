@@ -238,6 +238,9 @@ if __name__ == '__main__':
     mamba_dropout = args['mamba_dropout']
     bimamba_fusion = args['bimamba_fusion']
 
+    gat_num_layers = args['gat_num_layers']
+    gat_dropout = args['gat_dropout']
+
     # 对比对齐相关参数
     use_contrastive_align = args['use_contrastive_align']
     contrastive_weight = args['contrastive_weight']
@@ -384,6 +387,8 @@ if __name__ == '__main__':
             mamba_expand=mamba_expand,
             mamba_dropout=mamba_dropout,
             bimamba_fusion=bimamba_fusion,
+            gat_num_layers=gat_num_layers,
+            gat_dropout=gat_dropout,
             use_contrastive_align=use_contrastive_align,
             contrastive_proj_dim=contrastive_proj_dim,
             contrastive_temperature=contrastive_temperature,
@@ -409,6 +414,8 @@ if __name__ == '__main__':
             mamba_expand=mamba_expand,
             mamba_dropout=mamba_dropout,
             bimamba_fusion=bimamba_fusion,
+            gat_num_layers=gat_num_layers,
+            gat_dropout=gat_dropout,
             use_contrastive_align=use_contrastive_align,
             contrastive_proj_dim=contrastive_proj_dim,
             contrastive_temperature=contrastive_temperature,

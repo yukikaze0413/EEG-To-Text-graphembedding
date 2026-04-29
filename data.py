@@ -25,28 +25,33 @@ def get_input_sample(sent_obj, tokenizer, eeg_type = 'GD', bands = ['_t1','_t2',
         frequency_features = []
 
         for band in bands:
-            frequency_features.append(word_obj['word_level_EEG'][eeg_type][eeg_type+band])
-        word_eeg_embedding = np.concatenate(frequency_features)
+            # 获取当前频带数据并独立进行标准化
+            band_data = word_obj['word_level_EEG'][eeg_type][eeg_type+band]
+            band_tensor = torch.from_numpy(band_data).float()
+            band_tensor = normalize_1d(band_tensor)
+            frequency_features.append(band_tensor)
+            
+        word_eeg_embedding = torch.cat(frequency_features)
 
         if len(word_eeg_embedding) != 105*len(bands):
             print(f'expect word eeg embedding dim to be {105*len(bands)}, but got {len(word_eeg_embedding)}, return None')
             return None
         
-        # assert len(word_eeg_embedding) == 105*len(bands)
-        return_tensor = torch.from_numpy(word_eeg_embedding)
-        return normalize_1d(return_tensor)
+        return word_eeg_embedding
 
     def get_sent_eeg(sent_obj, bands):
         sent_eeg_features = []
 
         for band in bands:
             key = 'mean'+band
-            sent_eeg_features.append(sent_obj['sentence_level_EEG'][key])
+            band_data = sent_obj['sentence_level_EEG'][key]
+            band_tensor = torch.from_numpy(band_data).float()
+            band_tensor = normalize_1d(band_tensor)
+            sent_eeg_features.append(band_tensor)
 
-        sent_eeg_embedding = np.concatenate(sent_eeg_features)
+        sent_eeg_embedding = torch.cat(sent_eeg_features)
         assert len(sent_eeg_embedding) == 105*len(bands)
-        return_tensor = torch.from_numpy(sent_eeg_embedding)
-        return normalize_1d(return_tensor)
+        return sent_eeg_embedding
 
     if sent_obj is None:
         # print(f'  - skip bad sentence')   

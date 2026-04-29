@@ -49,14 +49,18 @@ def get_config(case):
         
         parser.add_argument('-train_input', '--train_input', help='训练输入类型（如 EEG/noise）' ,required=True)
 
-        # EEG 编码器配置：支持 Transformer 与双向 Mamba
-        parser.add_argument('--eeg_encoder_type', type=str, default='transformer', choices=['transformer', 'bimamba'])
+        # EEG 编码器配置：支持 Transformer, 双向 Mamba 与 GAT 图网络
+        parser.add_argument('--eeg_encoder_type', type=str, default='transformer', choices=['transformer', 'bimamba', 'gat'])
         parser.add_argument('--mamba_num_layers', type=int, default=6)
         parser.add_argument('--mamba_d_state', type=int, default=16)
         parser.add_argument('--mamba_d_conv', type=int, default=4)
         parser.add_argument('--mamba_expand', type=int, default=2)
         parser.add_argument('--mamba_dropout', type=float, default=0.1)
         parser.add_argument('--bimamba_fusion', type=str, default='concat_linear', choices=['concat_linear', 'gated_sum'])
+        
+        # GAT 图网络特定配置
+        parser.add_argument('--gat_num_layers', type=int, default=2)
+        parser.add_argument('--gat_dropout', type=float, default=0.1)
 
         # 对比对齐配置：用于增强 EEG 与文本语义一致性
         parser.add_argument('--use_contrastive_align', type=str2bool, default=False)
