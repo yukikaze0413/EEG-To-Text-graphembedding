@@ -1,7 +1,6 @@
-name: EEGToText-py28-cu128
+name: EEG
 channels:
   - conda-forge
-  - nodefaults
 dependencies:
   - python=3.10
   - numpy
