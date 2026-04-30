@@ -2,11 +2,43 @@ import scipy.io as io
 import h5py
 import os
 import json
+import time
 from glob import glob
 from tqdm import tqdm
 import numpy as np
 import pickle
 import argparse
+
+# region agent log
+def _agent_debug_log_874988(run_id, hypothesis_id, location, message, data):
+    payload = {
+        "sessionId": "874988",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open("debug-874988.log", "a", encoding="utf-8") as fp:
+            fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except Exception:
+        pass
+
+def _agent_array_summary_874988(value):
+    try:
+        arr = np.asarray(value)
+        return {
+            "python_type": type(value).__name__,
+            "shape": list(arr.shape),
+            "size": int(arr.size),
+            "dtype": str(arr.dtype),
+            "preview": arr.reshape(-1)[:5].tolist() if arr.size else [],
+        }
+    except Exception as exc:
+        return {"python_type": type(value).__name__, "summary_error": repr(exc)}
+# endregion
 
 parser = argparse.ArgumentParser(description='Specify task name for converting ZuCo v1.0 Mat file to Pickle')
 parser.add_argument('-t', '--task_name', help='name of the task in /dataset/ZuCo, choose from {task1-SR,task2-NR,task3-TSR}', required=True)
@@ -79,6 +111,30 @@ for mat_file in tqdm(mat_files):
                 word_tokens_all.append(word.content)
                 # TODO: add more version of word level eeg: GD, SFD, GPT
                 word_obj['nFixations'] = word.nFixations
+                if getattr(_agent_debug_log_874988, "_v1_nfix_count", 0) < 80:
+                    _agent_debug_log_874988._v1_nfix_count = getattr(_agent_debug_log_874988, "_v1_nfix_count", 0) + 1
+                    try:
+                        nfix_gt_zero = word.nFixations > 0
+                        comparison_summary = _agent_array_summary_874988(nfix_gt_zero)
+                    except Exception as exc:
+                        comparison_summary = {"comparison_error": repr(exc)}
+                    # region agent log
+                    _agent_debug_log_874988(
+                        "initial",
+                        "H1,H2,H3",
+                        "util/construct_dataset_mat_to_pickle_v1.py:82",
+                        "v1 nFixations before truth-value comparison",
+                        {
+                            "task_name": task_name,
+                            "subject_name": subject_name,
+                            "mat_file": os.path.basename(mat_file),
+                            "sentence_content": str(getattr(sent, "content", ""))[:160],
+                            "word_content": str(getattr(word, "content", ""))[:80],
+                            "nFixations": _agent_array_summary_874988(word.nFixations),
+                            "nFixations_gt_zero": comparison_summary,
+                        },
+                    )
+                    # endregion
                 if word.nFixations > 0:    
                     word_obj['word_level_EEG'] = {'FFD':{'FFD_t1':word.FFD_t1, 'FFD_t2':word.FFD_t2, 'FFD_a1':word.FFD_a1, 'FFD_a2':word.FFD_a2, 'FFD_b1':word.FFD_b1, 'FFD_b2':word.FFD_b2, 'FFD_g1':word.FFD_g1, 'FFD_g2':word.FFD_g2}}
                     word_obj['word_level_EEG']['TRT'] = {'TRT_t1':word.TRT_t1, 'TRT_t2':word.TRT_t2, 'TRT_a1':word.TRT_a1, 'TRT_a2':word.TRT_a2, 'TRT_b1':word.TRT_b1, 'TRT_b2':word.TRT_b2, 'TRT_g1':word.TRT_g1, 'TRT_g2':word.TRT_g2}

@@ -346,7 +346,8 @@ class GAET(nn.Module):
         contrastive_weight: float = 0.0,
     ):
         h_graph, _ = self.encode_eeg(eeg_signals, adjacency)
-        graph_tokens = self.projector(h_graph)
+        llm_dtype = next(self.llm.parameters()).dtype
+        graph_tokens = self.projector(h_graph).to(dtype=llm_dtype)
         encoder_outputs = BaseModelOutput(last_hidden_state=graph_tokens)
         encoder_attention_mask = torch.ones(
             graph_tokens.shape[0], graph_tokens.shape[1], dtype=torch.long, device=graph_tokens.device
@@ -424,7 +425,8 @@ class GAET(nn.Module):
     ) -> torch.Tensor:
         self.eval()
         h_graph, _ = self.encode_eeg(eeg_signals, adjacency)
-        graph_tokens = self.projector(h_graph)
+        llm_dtype = next(self.llm.parameters()).dtype
+        graph_tokens = self.projector(h_graph).to(dtype=llm_dtype)
         encoder_outputs = BaseModelOutput(last_hidden_state=graph_tokens)
         encoder_attention_mask = torch.ones(
             graph_tokens.shape[0], graph_tokens.shape[1], dtype=torch.long, device=graph_tokens.device

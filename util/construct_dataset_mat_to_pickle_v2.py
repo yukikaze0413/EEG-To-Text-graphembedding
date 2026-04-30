@@ -1,10 +1,30 @@
 import os
+import json
+import time
 import numpy as np
 import h5py
 import data_loading_helpers_modified as dh
 from glob import glob
 from tqdm import tqdm
 import pickle
+
+# region agent log
+def _agent_debug_log_874988(run_id, hypothesis_id, location, message, data):
+    payload = {
+        "sessionId": "874988",
+        "runId": run_id,
+        "hypothesisId": hypothesis_id,
+        "location": location,
+        "message": message,
+        "data": data,
+        "timestamp": int(time.time() * 1000),
+    }
+    try:
+        with open("debug-874988.log", "a", encoding="utf-8") as fp:
+            fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
+    except Exception:
+        pass
+# endregion
 
 
 task = "NR"
@@ -76,6 +96,24 @@ for file in tqdm(os.listdir(rootdir)):
                 sent_obj['word'] = []
 
                 # get word level data
+                if getattr(_agent_debug_log_874988, "_v2_sentence_count", 0) < 80:
+                    _agent_debug_log_874988._v2_sentence_count = getattr(_agent_debug_log_874988, "_v2_sentence_count", 0) + 1
+                    # region agent log
+                    _agent_debug_log_874988(
+                        "initial",
+                        "H4,H5",
+                        "util/construct_dataset_mat_to_pickle_v2.py:79",
+                        "v2 sentence before word-level extraction",
+                        {
+                            "subject": subject,
+                            "file": os.path.basename(file_name),
+                            "sentence_idx": int(idx),
+                            "sentence_count": int(len(rawData)),
+                            "sentence_preview": sent_string[:160],
+                            "word_ref": repr(wordData[idx][0]),
+                        },
+                    )
+                    # endregion
                 word_data, word_tokens_all, word_tokens_has_fixation, word_tokens_with_mask = dh.extract_word_level_data(f, f[wordData[idx][0]])
                 
                 if word_data == {}:
