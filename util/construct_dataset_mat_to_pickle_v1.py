@@ -59,6 +59,14 @@ print('##############################')
 print(f'start processing ZuCo {task_name}...')
 
 
+def has_fixations(n_fixations):
+    """Return True when MATLAB nFixations contains at least one positive value."""
+    n_fixations_array = np.asarray(n_fixations)
+    if n_fixations_array.size == 0:
+        return False
+    return bool(np.any(n_fixations_array > 0))
+
+
 if version == 'v1':
     # old version 
     input_mat_files_dir = f'./dataset/ZuCo/{task_name}/Matlab_files' 
