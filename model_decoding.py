@@ -300,6 +300,13 @@ class GAET(nn.Module):
         self.stage = stage
         self.set_stage(stage)
 
+    def train(self, mode: bool = True):
+        super().train(mode)
+        # Frozen pretrained models should stay deterministic while trainable heads update.
+        self.llm.eval()
+        self.text_encoder.eval()
+        return self
+
     def set_stage(self, stage: str) -> None:
         if stage not in ("align", "generate"):
             raise ValueError("stage must be one of: align, generate")

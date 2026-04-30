@@ -36,6 +36,7 @@ def build_functional_adjacency(eeg_signals: np.ndarray) -> np.ndarray:
     """
     a = np.corrcoef(eeg_signals)
     a = np.nan_to_num(a, nan=0.0, posinf=0.0, neginf=0.0)
+    a = np.clip(a, 0.0, 1.0)
     np.fill_diagonal(a, 1.0)
     return a.astype(np.float32)
 
@@ -46,6 +47,7 @@ def combine_adjacency_matrices(a_functional: np.ndarray, self_loop_weight: float
     d = np.sum(a, axis=1)
     d_inv_sqrt = np.diag(1.0 / np.sqrt(d + 1e-8))
     a_norm = d_inv_sqrt @ a @ d_inv_sqrt
+    a_norm = np.nan_to_num(a_norm, nan=0.0, posinf=0.0, neginf=0.0)
     if getattr(combine_adjacency_matrices, "_agent_log_count", 0) < 20:
         combine_adjacency_matrices._agent_log_count = getattr(combine_adjacency_matrices, "_agent_log_count", 0) + 1
         # region agent log
