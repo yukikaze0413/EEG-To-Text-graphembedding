@@ -1,30 +1,9 @@
 import os
-import json
-import time
 import numpy as np
 import h5py
 import data_loading_helpers_modified as dh
-from glob import glob
 from tqdm import tqdm
 import pickle
-
-# region agent log
-def _agent_debug_log_874988(run_id, hypothesis_id, location, message, data):
-    payload = {
-        "sessionId": "874988",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open("debug-874988.log", "a", encoding="utf-8") as fp:
-            fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except Exception:
-        pass
-# endregion
 
 
 task = "NR"
@@ -35,6 +14,36 @@ print('##############################')
 print(f'start processing ZuCo task2-NR-2.0...')
 
 dataset_dict = {}
+
+def attach_word_fields(sent_obj, word_data, word_tokens_all, word_tokens_has_fixation, word_tokens_with_mask):
+    sent_obj['word'] = []
+    for widx in range(len(word_data)):
+        data_dict = word_data[widx]
+        word_obj = {'content':data_dict['content'], 'nFixations': data_dict['nFix']}
+        if 'GD_EEG' in data_dict:
+            gd = data_dict["GD_EEG"]
+            ffd = data_dict["FFD_EEG"]
+            trt = data_dict["TRT_EEG"]
+            assert len(gd) == len(trt) == len(ffd) == 8
+            word_obj['word_level_EEG'] = {
+                'GD':{'GD_t1':gd[0], 'GD_t2':gd[1], 'GD_a1':gd[2], 'GD_a2':gd[3], 'GD_b1':gd[4], 'GD_b2':gd[5], 'GD_g1':gd[6], 'GD_g2':gd[7]},
+                'FFD':{'FFD_t1':ffd[0], 'FFD_t2':ffd[1], 'FFD_a1':ffd[2], 'FFD_a2':ffd[3], 'FFD_b1':ffd[4], 'FFD_b2':ffd[5], 'FFD_g1':ffd[6], 'FFD_g2':ffd[7]},
+                'TRT':{'TRT_t1':trt[0], 'TRT_t2':trt[1], 'TRT_a1':trt[2], 'TRT_a2':trt[3], 'TRT_b1':trt[4], 'TRT_b2':trt[5], 'TRT_g1':trt[6], 'TRT_g2':trt[7]}
+            }
+            sent_obj['word'].append(word_obj)
+
+    sent_obj['word_tokens_has_fixation'] = word_tokens_has_fixation
+    sent_obj['word_tokens_with_mask'] = word_tokens_with_mask
+    sent_obj['word_tokens_all'] = word_tokens_all
+    return sent_obj
+
+
+def empty_word_fields(sent_obj):
+    sent_obj['word'] = []
+    sent_obj['word_tokens_has_fixation'] = []
+    sent_obj['word_tokens_with_mask'] = []
+    sent_obj['word_tokens_all'] = []
+    return sent_obj
 
 for file in tqdm(os.listdir(rootdir)):
     if file.endswith(task+".mat"):
@@ -92,65 +101,22 @@ for file in tqdm(os.listdir(rootdir)):
                     'mean_g1':np.squeeze(f[mean_g1_objs[idx][0]][()]), 
                     'mean_g2':np.squeeze(f[mean_g2_objs[idx][0]][()])
                 }
-                # print(sent_obj)
-                sent_obj['word'] = []
-
-                # get word level data
-                if getattr(_agent_debug_log_874988, "_v2_sentence_count", 0) < 80:
-                    _agent_debug_log_874988._v2_sentence_count = getattr(_agent_debug_log_874988, "_v2_sentence_count", 0) + 1
-                    # region agent log
-                    _agent_debug_log_874988(
-                        "initial",
-                        "H4,H5",
-                        "util/construct_dataset_mat_to_pickle_v2.py:79",
-                        "v2 sentence before word-level extraction",
-                        {
-                            "subject": subject,
-                            "file": os.path.basename(file_name),
-                            "sentence_idx": int(idx),
-                            "sentence_count": int(len(rawData)),
-                            "sentence_preview": sent_string[:160],
-                            "word_ref": repr(wordData[idx][0]),
-                        },
-                    )
-                    # endregion
                 word_data, word_tokens_all, word_tokens_has_fixation, word_tokens_with_mask = dh.extract_word_level_data(f, f[wordData[idx][0]])
                 
-                if word_data == {}:
-                    print(f'missing sent: subj:{subject} content:{sent_string}, append None')
-                    dataset_dict[subject].append(None)
-                    continue
-                elif len(word_tokens_all) == 0:
-                    print(f'no word level features: subj:{subject} content:{sent_string}, append None')
-                    dataset_dict[subject].append(None)
+                if word_data == {} or len(word_tokens_all) == 0:
+                    print(f'missing word-level data: subj:{subject} content:{sent_string}, keep sentence-level sample')
+                    dataset_dict[subject].append(empty_word_fields(sent_obj))
                     continue
 
-                else:                    
-                    for widx in range(len(word_data)):
-                        data_dict = word_data[widx]
-                        word_obj = {'content':data_dict['content'], 'nFixations': data_dict['nFix']}
-                        if 'GD_EEG' in data_dict:
-                            # print('has fixation: ', data_dict['content'])
-                            gd = data_dict["GD_EEG"]
-                            ffd = data_dict["FFD_EEG"]
-                            trt = data_dict["TRT_EEG"]
-                            assert len(gd) == len(trt) == len(ffd) == 8
-                            word_obj['word_level_EEG'] = {
-                                'GD':{'GD_t1':gd[0], 'GD_t2':gd[1], 'GD_a1':gd[2], 'GD_a2':gd[3], 'GD_b1':gd[4], 'GD_b2':gd[5], 'GD_g1':gd[6], 'GD_g2':gd[7]},
-                                'FFD':{'FFD_t1':ffd[0], 'FFD_t2':ffd[1], 'FFD_a1':ffd[2], 'FFD_a2':ffd[3], 'FFD_b1':ffd[4], 'FFD_b2':ffd[5], 'FFD_g1':ffd[6], 'FFD_g2':ffd[7]},
-                                'TRT':{'TRT_t1':trt[0], 'TRT_t2':trt[1], 'TRT_a1':trt[2], 'TRT_a2':trt[3], 'TRT_b1':trt[4], 'TRT_b2':trt[5], 'TRT_g1':trt[6], 'TRT_g2':trt[7]}
-                            }
-                            sent_obj['word'].append(word_obj)
-                        
-                    sent_obj['word_tokens_has_fixation'] = word_tokens_has_fixation
-                    sent_obj['word_tokens_with_mask'] = word_tokens_with_mask
-                    sent_obj['word_tokens_all'] = word_tokens_all     
-                    
-                    # print(sent_obj.keys())
-                    # print(len(sent_obj['word']))
-                    # print(sent_obj['word'][0])
-
-                    dataset_dict[subject].append(sent_obj)
+                dataset_dict[subject].append(
+                    attach_word_fields(
+                        sent_obj,
+                        word_data,
+                        word_tokens_all,
+                        word_tokens_has_fixation,
+                        word_tokens_with_mask,
+                    )
+                )
 
 """output"""
 task_name = 'task2-NR-2.0'

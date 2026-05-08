@@ -1,8 +1,8 @@
-# 基于图嵌入的 EEG-To-Text
+# EEG-To-Text with Graph Memory
 
-本仓库实现了一个面向 ZuCo 数据集的图结构 EEG 到文本解码流程。当前模型 `GAET` 使用时序编码器和图 Transformer 编码句子级 EEG 特征，通过对比学习对齐 EEG 表征和文本表征，并使用学习得到的图 token 条件化冻结的 BART 解码器。
+本仓库实现了一个面向 ZuCo 数据集的 EEG 到文本解码流程。核心思想是：先把句子级 EEG 构造成电极图，经过图编码器得到 EEG graph embedding，再把图嵌入投影成 BART decoder cross-attention 的 memory tokens。BART 会从这些 memory tokens 中构造 cross-attention 的 key/value，因此生成阶段等价于让冻结的 BART decoder 从 EEG 图记忆中读取信息并生成文本。
 
-评估阶段使用 `model.generate(...)` 进行自回归生成，不使用 teacher forcing 下的 logits 直接解码。
+评估阶段使用 `model.generate(...)` 自回归生成文本，不使用 teacher forcing 下的 logits 直接解码。
 
 ## 项目结构
 
@@ -15,10 +15,10 @@
 ├── eval_decoding.py                  # 文本生成与指标评估入口
 ├── environment.yml                   # Conda 环境配置
 ├── scripts/
-│   ├── prepare_dataset.sh            # Linux/macOS 数据准备脚本
-│   ├── prepare_dataset_windows.ps1   # Windows 数据准备脚本
-│   ├── train_gaet.sh                 # 训练辅助脚本
-│   └── eval_gaet.sh                  # 评估辅助脚本
+│   ├── prepare_dataset.sh
+│   ├── prepare_dataset_windows.ps1
+│   ├── train_gaet.sh
+│   └── eval_gaet.sh
 └── util/
     ├── construct_dataset_mat_to_pickle_v1.py
     ├── construct_dataset_mat_to_pickle_v2.py
@@ -27,16 +27,10 @@
 
 ## 环境配置
 
-使用 `environment.yml` 创建 Conda 环境：
-
 ```bash
 conda env create -f environment.yml
-conda activate EEGToText
+conda activate EEG
 ```
-
-环境主要包含 PyTorch 1.9.0、CUDA 11.1、Transformers 4.6.1，以及 `evaluate`、`sacrebleu`、`rouge`、`jiwer` 等评估指标依赖。
-
-如果在服务器上训练，请确认服务器的 GPU 驱动、CUDA 版本和 PyTorch 构建版本兼容。
 
 ## 数据准备
 
@@ -50,78 +44,57 @@ dataset/ZuCo/
 └── task2-NR-2.0/Matlab_files/
 ```
 
-将 MATLAB 文件转换为 pickle 文件：
+转换为 pickle：
 
 ```bash
 bash scripts/prepare_dataset.sh
 ```
 
-Windows PowerShell 下运行：
+Windows PowerShell：
 
 ```powershell
 .\scripts\prepare_dataset_windows.ps1
 ```
 
-生成的 pickle 文件会保存到：
+## 模型思想
 
-```text
-dataset/ZuCo/<task-name>/pickle/
-```
+1. `data.py` 将每个句子的 EEG 表示为 `(105, num_bands)`，其中 105 个电极是图节点，频段特征是每个节点的信号。
+2. 根据 EEG 节点信号计算 Pearson 功能连接图，并进行归一化。
+3. `TemporalEncoder + EEGGraphTransformer` 编码 EEG 图，得到 graph embedding。
+4. `GraphToLLMProjector` 把 graph embedding 投影成多个 graph memory tokens。
+5. 这些 graph memory tokens 作为 `encoder_outputs` 传给 BART。BART decoder 的 cross-attention 会从它们构造 K/V，并在生成每个 token 时读取 EEG 图信息。
 
 ## 训练
-
-使用训练脚本：
 
 ```bash
 bash scripts/train_gaet.sh task1_task2_task3 EEG 0
 ```
 
-参数说明：
-
-- `task1_task2_task3`：任务组合，例如 `task1_task2_task3` 或 `task1_task2_taskNRv2`。
-- `EEG`：训练输入类型。`EEG` 表示真实 EEG，`noise` 表示噪声基线。
-- `0`：可见 GPU 编号。
-
 训练分为两个阶段：
 
-1. 对齐阶段：训练时序编码器、图 Transformer 和对比学习头。
-2. 生成阶段：冻结 BART，仅训练 graph-to-BART projector。
+1. 对齐阶段：训练 EEG 时序编码器、图 Transformer 和图文对比学习头，让 EEG graph embedding 靠近 frozen text embedding。
+2. 生成阶段：冻结 BART 和文本编码器，训练 EEG encoder、graph transformer 和 graph-to-memory projector。若设置 `--contrastive_weight > 0`，冻结的对比头会作为 stage-1 对齐锚点，为 EEG graph embedding 提供额外正则。
 
-模型 checkpoint 会保存到：
+checkpoint 默认保存在：
 
 ```text
 checkpoints/decoding/best/
 checkpoints/decoding/last/
 ```
 
-训练配置会保存到：
-
-```text
-config/decoding/
-```
-
 ## 评估
-
-使用评估脚本：
 
 ```bash
 bash scripts/eval_gaet.sh task1_task2_task3 EEG EEG 0
 ```
 
-参数说明：
-
-- `task1_task2_task3`：任务组合。
-- `EEG`：训练时使用的输入类型。
-- `EEG`：测试时使用的输入类型。
-- `0`：可见 GPU 编号。
-
-生成文本会保存到：
+生成文本保存在：
 
 ```text
 results/
 ```
 
-指标结果会追加写入：
+指标结果追加写入：
 
 ```text
 score_results/
@@ -129,9 +102,13 @@ score_results/
 
 评估脚本会计算 BLEU、SacreBLEU、WER、CER 和 ROUGE。
 
-## 直接运行命令
+## 数据划分
 
-直接训练：
+`data.py` 使用规范化后的句子文本构建全局 train/dev/test split，再将所有选中 task 和 subject 的样本映射到相同 split，避免同一句文本跨集合泄漏。
+
+当前模型只使用句子级 EEG 构图；word-level 数据是可选附加字段。数据转换脚本会保留缺少词划分或词级 EEG 的句子，只要它仍包含 `content` 和 `sentence_level_EEG`。
+
+## 直接运行
 
 ```bash
 python train_decoding.py \
@@ -144,8 +121,6 @@ python train_decoding.py \
   -cuda cuda:0
 ```
 
-直接评估：
-
 ```bash
 python eval_decoding.py \
   --checkpoint_path checkpoints/decoding/best/<checkpoint>.pt \
@@ -155,14 +130,3 @@ python eval_decoding.py \
   --train_input EEG \
   -cuda cuda:0
 ```
-
-## 说明
-
-- `data.py` 使用 Pearson 相关系数从句子级 EEG 构建功能连接图。
-- `model_decoding.py` 冻结文本编码器和 BART 模型，并根据训练阶段控制可训练模块。
-- `eval_decoding.py` 基于图 token encoder outputs 调用 BART 生成接口，避免在评估中使用 teacher forcing。
-- 默认最大目标文本长度为 `56`。
-
-## 引用
-
-本项目遵循 ZuCo 数据集上的 EEG-to-text 解码设定，并使用生成式评估流程。如果你在实验中使用本代码，请根据具体实验引用相关 EEG-to-text 论文和 ZuCo 数据集。 

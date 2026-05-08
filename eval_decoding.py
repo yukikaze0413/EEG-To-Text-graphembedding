@@ -126,6 +126,7 @@ if __name__ == "__main__":
 
     tokenizer = BartTokenizer.from_pretrained(training_config["llm_name"])
     data_root = args["data_root"] if args["data_root"] else training_config.get("data_root", "./dataset/ZuCo")
+    max_len = args["max_len"] or training_config.get("max_len") or 56
     datasets = build_dataset(training_config["task_name"], data_root)
     test_set = ZuCo_dataset(
         datasets,
@@ -135,7 +136,7 @@ if __name__ == "__main__":
         bands=training_config["eeg_bands"],
         setting="unique_sent",
         test_input=args["test_input"],
-        max_len=args.get("max_len", training_config.get("max_len", 56)),
+        max_len=max_len,
     )
     test_loader = DataLoader(
         test_set,
@@ -201,7 +202,7 @@ if __name__ == "__main__":
                 pred_ids = model.generate(
                     eeg_signals=batch["eeg_signals"],
                     adjacency=batch["adjacency"],
-                    max_length=args["max_len"],
+                    max_length=max_len,
                     num_beams=args["num_beams"],
                     do_sample=args["do_sample"],
                 )

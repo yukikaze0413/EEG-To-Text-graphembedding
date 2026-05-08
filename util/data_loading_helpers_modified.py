@@ -1,63 +1,8 @@
-import json
-import time
-
 import numpy as np
 import re
 
 eeg_float_resolution=np.float16
 
-
-# region agent log
-def _agent_debug_log(run_id, hypothesis_id, location, message, data):
-    payload = {
-        "sessionId": "1110a0",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    with open("debug-1110a0.log", "a", encoding="utf-8") as fp:
-        fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
-# endregion
-
-# region agent log
-def _agent_debug_log_874988(run_id, hypothesis_id, location, message, data):
-    payload = {
-        "sessionId": "874988",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    try:
-        with open("debug-874988.log", "a", encoding="utf-8") as fp:
-            fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
-    except Exception:
-        pass
-
-def _agent_feature_ref_summary_874988(data_container, feature_data, word_idx):
-    summary = []
-    for feature_idx, obj in enumerate(feature_data):
-        try:
-            ref = obj[word_idx][0]
-            dataset = data_container[ref]
-            summary.append({
-                "feature_idx": int(feature_idx),
-                "ref": repr(ref),
-                "shape": list(dataset.shape),
-                "dtype": str(dataset.dtype),
-            })
-        except Exception as exc:
-            summary.append({
-                "feature_idx": int(feature_idx),
-                "error": repr(exc),
-            })
-    return summary
-# endregion
 
 Alpha_ffd_names = ['FFD_a1', 'FFD_a1_diff', 'FFD_a2', 'FFD_a2_diff']
 Beta_ffd_names = ['FFD_b1', 'FFD_b1_diff', 'FFD_b2', 'FFD_b2_diff']
@@ -179,54 +124,6 @@ def extract_word_level_data(data_container, word_objects, eeg_float_resolution =
             #### 
             assert len(contentData) == len(etData) == len(rawData), "different amounts of different data!!"
 
-            if getattr(extract_word_level_data, "_agent_input_log_count_874988", 0) < 40:
-                extract_word_level_data._agent_input_log_count_874988 = getattr(extract_word_level_data, "_agent_input_log_count_874988", 0) + 1
-                # region agent log
-                _agent_debug_log_874988(
-                    "initial",
-                    "H4,H5",
-                    "util/data_loading_helpers_modified.py:143",
-                    "v2 word extraction input lengths",
-                    {
-                        "sfd_missing": bool(sfd_missing),
-                        "raw_len": int(len(rawData)),
-                        "content_len": int(len(contentData)),
-                        "ffd_len": int(len(ffdData)),
-                        "gd_len": int(len(gdData)),
-                        "gpt_len": int(len(gptData)),
-                        "trt_len": int(len(trtData)),
-                        "sfd_len": int(len(sfdData)),
-                        "nfix_len": int(len(nFixData)),
-                        "fix_positions_len": int(len(fixPositions)),
-                        "zip_min_len": int(min(len(rawData), len(etData), len(contentData), len(ffdData), len(gdData), len(gptData), len(trtData), len(sfdData), len(nFixData), len(fixPositions))),
-                    },
-                )
-                # endregion
-
-            if getattr(extract_word_level_data, "_agent_log_count", 0) < 20:
-                extract_word_level_data._agent_log_count = getattr(extract_word_level_data, "_agent_log_count", 0) + 1
-                # region agent log
-                _agent_debug_log(
-                    "initial",
-                    "H2",
-                    "util/data_loading_helpers_modified.py:extract_word_level_data",
-                    "word extraction input lengths before zip",
-                    {
-                        "sfd_missing": bool(sfd_missing),
-                        "raw_len": int(len(rawData)),
-                        "content_len": int(len(contentData)),
-                        "ffd_len": int(len(ffdData)),
-                        "gd_len": int(len(gdData)),
-                        "gpt_len": int(len(gptData)),
-                        "trt_len": int(len(trtData)),
-                        "sfd_len": int(len(sfdData)),
-                        "nfix_len": int(len(nFixData)),
-                        "fix_positions_len": int(len(fixPositions)),
-                        "zip_min_len": int(min(len(rawData), len(etData), len(contentData), len(ffdData), len(gdData), len(gptData), len(trtData), len(sfdData), len(nFixData), len(fixPositions))),
-                    },
-                )
-                # endregion
-
             zipped_data = zip(rawData, etData, contentData, ffdData, gdData, gptData, trtData, sfdData, nFixData, fixPositions)
             
             word_level_data = {}
@@ -252,26 +149,6 @@ def extract_word_level_data(data_container, word_objects, eeg_float_resolution =
                     #fixations_order_per_word.append(np.array(data_container[fixPos[0]]))
 
                     #print([data_container[obj[word_idx][0]][()] for obj in Alpha_features_data])
-
-                    if getattr(extract_word_level_data, "_agent_feature_log_count_874988", 0) < 80:
-                        extract_word_level_data._agent_feature_log_count_874988 = getattr(extract_word_level_data, "_agent_feature_log_count_874988", 0) + 1
-                        # region agent log
-                        _agent_debug_log_874988(
-                            "initial",
-                            "H4,H5",
-                            "util/data_loading_helpers_modified.py:196",
-                            "v2 feature refs before EEG concatenation",
-                            {
-                                "word_idx": int(word_idx),
-                                "word_string": word_string[:80],
-                                "nFix": None if data_dict["nFix"] is None else float(data_dict["nFix"]),
-                                "alpha_refs": _agent_feature_ref_summary_874988(data_container, Alpha_features_data, word_idx),
-                                "beta_refs": _agent_feature_ref_summary_874988(data_container, Beta_features_data, word_idx),
-                                "gamma_refs": _agent_feature_ref_summary_874988(data_container, Gamma_features_data, word_idx),
-                                "theta_refs": _agent_feature_ref_summary_874988(data_container, Theta_features_data, word_idx),
-                            },
-                        )
-                        # endregion
 
                     data_dict["ALPHA_EEG"] = np.concatenate([data_container[obj[word_idx][0]][()]
                                                              if len(data_container[obj[word_idx][0]][()].shape) == 2 else []
@@ -312,23 +189,6 @@ def extract_word_level_data(data_container, word_objects, eeg_float_resolution =
                     word_idx += 1
                 else:
                     print(word_string + " is not a real word.")
-            if getattr(extract_word_level_data, "_agent_output_log_count", 0) < 20:
-                extract_word_level_data._agent_output_log_count = getattr(extract_word_level_data, "_agent_output_log_count", 0) + 1
-                # region agent log
-                _agent_debug_log(
-                    "initial",
-                    "H2",
-                    "util/data_loading_helpers_modified.py:extract_word_level_data",
-                    "word extraction output counts",
-                    {
-                        "sfd_missing": bool(sfd_missing),
-                        "word_level_data_count": int(len(word_level_data)),
-                        "word_tokens_all_count": int(len(word_tokens_all)),
-                        "word_tokens_has_fixation_count": int(len(word_tokens_has_fixation)),
-                        "word_tokens_with_mask_count": int(len(word_tokens_with_mask)),
-                    },
-                )
-                # endregion
         else:
             # If there are no word-level data it will be word embeddings alone
             word_level_data = {}

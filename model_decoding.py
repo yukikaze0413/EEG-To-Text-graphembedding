@@ -1,6 +1,4 @@
 import math
-import json
-import time
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -9,22 +7,6 @@ import torch.nn as nn
 import torch.nn.functional as F
 from transformers import AutoModel, AutoTokenizer, BartForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput
-
-
-# region agent log
-def _agent_debug_log(run_id: str, hypothesis_id: str, location: str, message: str, data: Dict) -> None:
-    payload = {
-        "sessionId": "1110a0",
-        "runId": run_id,
-        "hypothesisId": hypothesis_id,
-        "location": location,
-        "message": message,
-        "data": data,
-        "timestamp": int(time.time() * 1000),
-    }
-    with open("debug-1110a0.log", "a", encoding="utf-8") as fp:
-        fp.write(json.dumps(payload, ensure_ascii=True) + "\n")
-# endregion
 
 
 class TemporalEncoder(nn.Module):
@@ -199,7 +181,13 @@ class GraphTextContrastive(nn.Module):
 
 
 class GraphToLLMProjector(nn.Module):
-    """Project graph embedding to graph tokens for decoder cross-attention."""
+    """
+    Project one EEG graph embedding into memory tokens for BART decoder cross-attention.
+
+    HuggingFace BART builds cross-attention keys and values from encoder_outputs.
+    These projected graph memory tokens are therefore the EEG-derived K/V source
+    seen by every decoder layer during training and generation.
+    """
 
     def __init__(self, d_graph: int = 256, d_llm: int = 1024, num_query_tokens: int = 32) -> None:
         super().__init__()
@@ -215,9 +203,9 @@ class GraphToLLMProjector(nn.Module):
 
     def forward(self, h_graph: torch.Tensor) -> torch.Tensor:
         bsz = h_graph.shape[0]
-        kv_tokens = self.graph_to_tokens(h_graph).view(bsz, self.num_query_tokens, self.d_llm)
-        q = self.query_tokens.expand(bsz, -1, -1)
-        return self.token_norm(kv_tokens + q)
+        memory_tokens = self.graph_to_tokens(h_graph).view(bsz, self.num_query_tokens, self.d_llm)
+        learned_queries = self.query_tokens.expand(bsz, -1, -1)
+        return self.token_norm(memory_tokens + learned_queries)
 
 
 class EEGTextEncoder(nn.Module):
@@ -252,7 +240,11 @@ class EEGTextEncoder(nn.Module):
 class GAET(nn.Module):
     """
     Graph-Aligned EEG-to-Text:
-    Stage-1 contrastive alignment, Stage-2 graph-token conditioned generation.
+
+    Stage 1 aligns EEG graph embeddings with frozen text embeddings.
+    Stage 2 maps EEG graph embeddings into BART encoder memory tokens. The
+    frozen BART decoder uses those tokens as cross-attention K/V memory to
+    generate text from the EEG graph representation.
     """
 
     def __init__(
@@ -281,9 +273,10 @@ class GAET(nn.Module):
         self.graph_transformer = EEGGraphTransformer(**graph_cfg)
 
         self.text_encoder = EEGTextEncoder(model_name=contrastive_cfg.get("text_model", "sentence-transformers/all-MiniLM-L6-v2"))
+        text_dim = getattr(self.text_encoder.model.config, "hidden_size", contrastive_cfg.get("d_text", 384))
         self.contrastive = GraphTextContrastive(
             d_graph=d_graph,
-            d_text=contrastive_cfg.get("d_text", 384),
+            d_text=text_dim,
             d_proj=contrastive_cfg.get("d_proj", 256),
             temperature=contrastive_cfg.get("temperature", 0.07),
         )
@@ -313,9 +306,9 @@ class GAET(nn.Module):
         self.stage = stage
 
         for p in self.temporal_encoder.parameters():
-            p.requires_grad = stage == "align"
+            p.requires_grad = True
         for p in self.graph_transformer.parameters():
-            p.requires_grad = stage == "align"
+            p.requires_grad = True
         for p in self.contrastive.parameters():
             p.requires_grad = stage == "align"
         for p in self.projector.parameters():
@@ -354,10 +347,12 @@ class GAET(nn.Module):
     ):
         h_graph, _ = self.encode_eeg(eeg_signals, adjacency)
         llm_dtype = next(self.llm.parameters()).dtype
-        graph_tokens = self.projector(h_graph).to(dtype=llm_dtype)
-        encoder_outputs = BaseModelOutput(last_hidden_state=graph_tokens)
+        graph_memory = self.projector(h_graph).to(dtype=llm_dtype)
+        # BART derives decoder cross-attention K/V from encoder_outputs.
+        # Passing EEG graph memory here is the intended graph-to-K/V bridge.
+        encoder_outputs = BaseModelOutput(last_hidden_state=graph_memory)
         encoder_attention_mask = torch.ones(
-            graph_tokens.shape[0], graph_tokens.shape[1], dtype=torch.long, device=graph_tokens.device
+            graph_memory.shape[0], graph_memory.shape[1], dtype=torch.long, device=graph_memory.device
         )
         labels = self._labels_to_model_labels(target_ids, self.llm.config.pad_token_id)
         out = self.llm(
@@ -371,32 +366,9 @@ class GAET(nn.Module):
         if contrastive_weight > 0.0 and text_list is not None:
             with torch.no_grad():
                 h_text = self.text_encoder(text_list, eeg_signals.device)
-            contrastive_loss, _ = self.contrastive(h_graph.detach(), h_text)
-            # In generate stage, trainable params are projector-only; this term has no gradient path.
-            # Keep it as a monitoring signal and avoid adding a misleading constant to the loss.
+            contrastive_loss, _ = self.contrastive(h_graph, h_text)
+            out.loss = out.loss + contrastive_weight * contrastive_loss
             out.contrastive_loss = contrastive_loss
-        if getattr(self, "_agent_generate_log_count", 0) < 20:
-            self._agent_generate_log_count = getattr(self, "_agent_generate_log_count", 0) + 1
-            # region agent log
-            _agent_debug_log(
-                run_id="initial",
-                hypothesis_id="H3",
-                location="model_decoding.py:GAET.forward_generate",
-                message="generate stage loss and contrastive monitoring",
-                data={
-                    "contrastive_weight": float(contrastive_weight),
-                    "has_text_list": bool(text_list is not None),
-                    "loss": float(out.loss.detach().cpu().item()) if out.loss is not None else None,
-                    "has_contrastive_loss": bool(out.contrastive_loss is not None),
-                    "contrastive_loss": float(out.contrastive_loss.detach().cpu().item()) if out.contrastive_loss is not None else None,
-                    "h_graph_requires_grad": bool(h_graph.requires_grad),
-                    "graph_tokens_requires_grad": bool(graph_tokens.requires_grad),
-                    "projector_trainable_params": int(sum(p.requires_grad for p in self.projector.parameters())),
-                    "temporal_trainable_params": int(sum(p.requires_grad for p in self.temporal_encoder.parameters())),
-                    "graph_trainable_params": int(sum(p.requires_grad for p in self.graph_transformer.parameters())),
-                },
-            )
-            # endregion
         return out
 
     def forward(
@@ -433,10 +405,10 @@ class GAET(nn.Module):
         self.eval()
         h_graph, _ = self.encode_eeg(eeg_signals, adjacency)
         llm_dtype = next(self.llm.parameters()).dtype
-        graph_tokens = self.projector(h_graph).to(dtype=llm_dtype)
-        encoder_outputs = BaseModelOutput(last_hidden_state=graph_tokens)
+        graph_memory = self.projector(h_graph).to(dtype=llm_dtype)
+        encoder_outputs = BaseModelOutput(last_hidden_state=graph_memory)
         encoder_attention_mask = torch.ones(
-            graph_tokens.shape[0], graph_tokens.shape[1], dtype=torch.long, device=graph_tokens.device
+            graph_memory.shape[0], graph_memory.shape[1], dtype=torch.long, device=graph_memory.device
         )
         return self.llm.generate(
             encoder_outputs=encoder_outputs,
